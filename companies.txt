@@ -1,0 +1,13 @@
+# One company per line:   Name | career page URL
+# Supported automatically: Workday, Greenhouse, Lever, Ashby, and Radancy-style sites (Citi, Barclays...)
+# For Workday paste the job-board URL, e.g. https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+
+Nvidia   | https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+Citi     | https://jobs.citi.com
+Mastercard     | https://mastercard.wd1.myworkdayjobs.com/CorporateCareers
+Salesforce     | https://salesforce.wd12.myworkdayjobs.com/External_Career_Site
+Wells Fargo    | https://wf.wd1.myworkdayjobs.com/WellsFargoJobs
+Walmart        | https://walmart.wd5.myworkdayjobs.com/WalmartExternal
+Morgan Stanley | https://ms.wd5.myworkdayjobs.com/External
+Adobe          | https://adobe.wd5.myworkdayjobs.com/external_experienced
+# Barclays | https://search.jobs.barclays
