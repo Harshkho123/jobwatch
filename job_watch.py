@@ -42,7 +42,8 @@ MIN_SKILLS = 3            # job description must match at least this many skill 
 HEADERS = {"User-Agent": "Mozilla/5.0 (personal job-watch script)"}
 
 # Search words sent to each career site
-SEARCH_TERMS = ["site reliability", "sre", "devops", "kubernetes", "platform engineer"]
+SEARCH_TERMS = ["site reliability", "sre", "devops", "kubernetes", "platform engineer",
+                "infrastructure", "application support", "technology analyst"]
 
 # Job TITLE must match one of these...
 TITLE_MATCH = re.compile(
