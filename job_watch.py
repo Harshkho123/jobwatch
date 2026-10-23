@@ -1,5 +1,5 @@
 """
-Job watcher: SRE / DevOps roles in India, posted in the last 2 days,
+Job watcher: SRE / DevOps roles in India, posted in the last few days,
 matched against Harshal's resume skills. Emails new matches.
 
 Usage:
@@ -87,7 +87,8 @@ SKILLS = {
 # ------------------------------------------------------------- helpers
 def http(method, url, **kw):
     time.sleep(0.5)  # be gentle with the sites
-    r = requests.request(method, url, headers=HEADERS, timeout=30, **kw)
+    headers = {**HEADERS, **kw.pop("headers", {})}
+    r = requests.request(method, url, headers=headers, timeout=30, **kw)
     r.raise_for_status()
     return r
 
@@ -119,6 +120,13 @@ def clean(d):
 # "fetch" (optional) is a function returning extra details (date/location/description).
 
 # ---- Workday (Nvidia and many large companies) ----
+WORKDAY_HEADERS = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "Accept-Language": "en-US",
+}
+
+
 def workday_age(s):
     s = (s or "").lower()
     if "today" in s:
@@ -132,7 +140,7 @@ def workday_age(s):
 
 
 def workday_detail(api, path):
-    i = http("GET", f"{api}{path}").json()["jobPostingInfo"]
+    i = http("GET", f"{api}{path}", headers={"Accept": "application/json"}).json()["jobPostingInfo"]
     locs = [i.get("location")] + (i.get("additionalLocations") or [])
     locs.append((i.get("country") or {}).get("descriptor"))
     return clean({
@@ -153,7 +161,13 @@ def workday(name, url):
     for term in SEARCH_TERMS:
         for offset in (0, 20, 40):
             body = {"appliedFacets": {}, "limit": 20, "offset": offset, "searchText": term}
-            posts = http("POST", f"{api}/jobs", json=body).json().get("jobPostings", [])
+            try:
+                posts = http("POST", f"{api}/jobs", json=body,
+                             headers=WORKDAY_HEADERS).json().get("jobPostings", [])
+            except requests.HTTPError as e:
+                # one rejected term/offset should not kill the whole company
+                print(f"[{name}] '{term}' offset {offset} skipped: {e}")
+                break
             if not posts:
                 break
             for j in posts:
