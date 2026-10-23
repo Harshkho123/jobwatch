@@ -5,9 +5,17 @@ matched against Harshal's resume skills. Emails new matches.
 Usage:
     python job_watch.py --test      # send a test email
     python job_watch.py --dry-run   # show matches, no email, nothing saved
-    python job_watch.py             # normal run (schedule this every 5 min)
+    python job_watch.py --debug     # (combine with the above) explain every drop
+    python job_watch.py             # normal run (schedule this)
 
-Add companies in companies.txt (one per line:  Name | career page URL).
+companies.txt line format:
+    Name | URL                      (platform guessed from the URL)
+    Name | type | URL               (type forces the platform)
+Types: workday, greenhouse, lever, ashby, radancy, oracle, apple, atlassian
+
+Health check: if a company fails FAIL_ALERT_AFTER runs in a row you get one
+email; you get another when it recovers. State lives in health.json (keep it
+persisted the same way as seen.json).
 """
 import html
 import json
@@ -25,6 +33,7 @@ from bs4 import BeautifulSoup
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEEN_FILE = os.path.join(HERE, "seen.json")
+HEALTH_FILE = os.path.join(HERE, "health.json")
 COMPANIES_FILE = os.path.join(HERE, "companies.txt")
 
 # ---------------------------------------------------------------- .env
@@ -37,8 +46,9 @@ if os.path.exists(env_path):
             os.environ.setdefault(k.strip(), v.strip())
 
 # ------------------------------------------------------------ settings
-MAX_AGE_DAYS = 4         # only jobs posted within this many days
+MAX_AGE_DAYS = 4          # only jobs posted within this many days
 MIN_SKILLS = 3            # job description must match at least this many skill groups
+FAIL_ALERT_AFTER = 6      # consecutive failed runs before a "company is failing" email
 HEADERS = {"User-Agent": "Mozilla/5.0 (personal job-watch script)"}
 
 # Search words sent to each career site
@@ -115,11 +125,20 @@ def clean(d):
     return {k: v for k, v in d.items() if v}
 
 
+def body_of(e):
+    """Short error body from a failed HTTP call (helps diagnose 4xx errors)."""
+    try:
+        return e.response.text[:200].replace("\n", " ")
+    except Exception:
+        return ""
+
+
 # ------------------------------------------------------------- sources
 # Each source yields dicts: id, company, title, url, location, posted, text, fetch
 # "fetch" (optional) is a function returning extra details (date/location/description).
+# A source RAISES if it could not get any data at all (that feeds the health check).
 
-# ---- Workday (Nvidia and many large companies) ----
+# ---- Workday (Nvidia, Walmart, Akamai and many large companies) ----
 WORKDAY_HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json",
@@ -158,6 +177,7 @@ def workday(name, url):
     site = parts[0] if parts else ""
     api = f"{base}/wday/cxs/{tenant}/{site}"
     seen_paths = set()
+    ok, last_err = 0, None
     for term in SEARCH_TERMS:
         for offset in (0, 20, 40):
             body = {"appliedFacets": {}, "limit": 20, "offset": offset, "searchText": term}
@@ -165,9 +185,10 @@ def workday(name, url):
                 posts = http("POST", f"{api}/jobs", json=body,
                              headers=WORKDAY_HEADERS).json().get("jobPostings", [])
             except requests.HTTPError as e:
-                # one rejected term/offset should not kill the whole company
-                print(f"[{name}] '{term}' offset {offset} skipped: {e}")
+                last_err = e
+                print(f"[{name}] '{term}' offset {offset} skipped: {e} | {body_of(e)}")
                 break
+            ok += 1
             if not posts:
                 break
             for j in posts:
@@ -185,6 +206,8 @@ def workday(name, url):
                     "posted": posted,
                     "fetch": (lambda p=path: workday_detail(api, p)),
                 }
+    if ok == 0 and last_err:  # every request failed -> report as a failure, not "0 listings"
+        raise last_err
 
 
 # ---- Greenhouse ----
@@ -279,7 +302,155 @@ def radancy(name, url):
                 }
 
 
+# ---- Oracle HCM "Candidate Experience" sites (JPMorgan and many others) ----
+# Untested against the live site: uses Oracle's public recruiting REST API.
+def oracle_detail(api, site, rid):
+    try:
+        params = {"onlyData": "true", "expand": "all",
+                  "finder": f'ById;Id="{rid}",siteNumber={site}'}
+        data = http("GET", f"{api}/recruitingCEJobRequisitionDetails", params=params,
+                    headers={"Accept": "application/json"}).json()
+        it = (data.get("items") or [{}])[0]
+        text = " ".join(strip_html(it.get(k)) for k in
+                        ("ExternalDescriptionStr", "ExternalResponsibilitiesStr",
+                         "ExternalQualificationsStr") if it.get(k))
+        return clean({"text": text})
+    except Exception:
+        return {}  # description unavailable -> skill filter is skipped for this job
+
+
+def oracle(name, url):
+    u = urlparse(url)
+    base = f"{u.scheme}://{u.netloc}"
+    m = re.search(r"/sites/([^/]+)", u.path)
+    site = m.group(1) if m else "CX_1"
+    api = f"{base}/hcmRestApi/resources/latest"
+    seen_ids = set()
+    ok, last_err = 0, None
+    for term in SEARCH_TERMS:
+        kw = f'"{term}"' if " " in term else term
+        for off in (0, 25, 50):
+            params = {
+                "onlyData": "true",
+                "expand": "requisitionList.secondaryLocations",
+                "finder": f"findReqs;siteNumber={site},keyword={kw},limit=25,offset={off},"
+                          f"sortBy=POSTING_DATES_DESC",
+            }
+            try:
+                data = http("GET", f"{api}/recruitingCEJobRequisitions", params=params,
+                            headers={"Accept": "application/json"}).json()
+            except requests.HTTPError as e:
+                last_err = e
+                print(f"[{name}] '{term}' offset {off} skipped: {e} | {body_of(e)}")
+                break
+            ok += 1
+            items = data.get("items") or []
+            reqs = (items[0].get("requisitionList") if items else None) or []
+            if not reqs:
+                break
+            for j in reqs:
+                rid = j.get("Id")
+                if not rid or rid in seen_ids:
+                    continue
+                seen_ids.add(rid)
+                locs = [j.get("PrimaryLocation", "")] + [
+                    s.get("Name", "") for s in (j.get("secondaryLocations") or []) if isinstance(s, dict)]
+                yield {
+                    "id": f"{name}:{rid}", "company": name, "title": j.get("Title", ""),
+                    "url": f"{base}/hcmUI/CandidateExperience/en/sites/{site}/job/{rid}",
+                    "location": " | ".join(x for x in locs if x),
+                    "posted": parse_date(j.get("PostedDate")),
+                    "fetch": (lambda r=rid: oracle_detail(api, site, r)),
+                }
+    if ok == 0 and last_err:
+        raise last_err
+
+
+# ---- Apple (jobs.apple.com internal search API; untested, may need tweaks) ----
+def apple(name, url):
+    s = requests.Session()
+    s.headers.update(HEADERS)
+    r = s.get("https://jobs.apple.com/api/csrfToken", timeout=30)
+    r.raise_for_status()
+    csrf = r.headers.get("x-apple-csrf-token", "")
+    hdrs = {
+        "x-apple-csrf-token": csrf,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Referer": "https://jobs.apple.com/en-in/search",
+        "Origin": "https://jobs.apple.com",
+    }
+    seen_ids = set()
+    for term in SEARCH_TERMS:
+        for page in (1, 2):
+            time.sleep(0.5)
+            body = {
+                "query": term,
+                "filters": {"locations": ["postLocation-INDC"]},  # India
+                "page": page,
+                "locale": "en-in",
+                "sort": "newest",
+            }
+            r = s.post("https://jobs.apple.com/api/v1/search", json=body, headers=hdrs, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            data = data.get("res", data) if isinstance(data, dict) else {}
+            results = data.get("searchResults") or []
+            if not results:
+                break
+            for j in results:
+                pid = j.get("positionId") or j.get("id")
+                if not pid or pid in seen_ids:
+                    continue
+                seen_ids.add(pid)
+                locs = [l.get("name", "") for l in (j.get("locations") or []) if isinstance(l, dict)]
+                slug = j.get("transformedPostingTitle", "")
+                yield {
+                    "id": f"{name}:{pid}", "company": name, "title": j.get("postingTitle", ""),
+                    "url": f"https://jobs.apple.com/en-in/details/{pid}/{slug}".rstrip("/"),
+                    "location": " | ".join(x for x in locs if x) or "India",
+                    "posted": parse_date(j.get("postDateInGMT") or j.get("postingDate")),
+                    "text": "",  # search results only have a short summary; skill filter is skipped
+                }
+
+
+# ---- Atlassian (careers site JSON listing; untested, written defensively) ----
+def atlassian(name, url):
+    data = http("GET", "https://www.atlassian.com/endpoint/careers/listings",
+                headers={"Accept": "application/json"}).json()
+    if isinstance(data, dict):
+        data = data.get("listings") or data.get("jobs") or data.get("data") or []
+    for j in data:
+        if not isinstance(j, dict):
+            continue
+        post = j.get("portalJobPost") or {}
+        jid = j.get("id") or post.get("id")
+        if not jid:
+            continue
+        locs = j.get("locations") or j.get("location") or []
+        if isinstance(locs, str):
+            locs = [locs]
+        locs = [l if isinstance(l, str) else (l.get("name") or "") for l in locs]
+        text = " ".join(strip_html(j.get(k)) for k in ("overview", "responsibilities", "qualifications")
+                        if j.get(k))
+        yield {
+            "id": f"{name}:{jid}", "company": name, "title": j.get("title", ""),
+            "url": j.get("applyUrl") or j.get("portalUrl") or
+                   f"https://www.atlassian.com/company/careers/details/{jid}",
+            "location": " | ".join(x for x in locs if x),
+            "posted": None,  # listing has no reliable posting date
+            "text": text,
+        }
+
+
+SOURCES = {
+    "workday": workday, "greenhouse": greenhouse, "lever": lever, "ashby": ashby,
+    "radancy": radancy, "oracle": oracle, "apple": apple, "atlassian": atlassian,
+}
+
+
 def pick_source(url):
+    """Guess the platform from the URL when companies.txt gives no type."""
     host = urlparse(url).netloc.lower()
     if "myworkdayjobs.com" in host:
         return workday
@@ -289,7 +460,19 @@ def pick_source(url):
         return lever
     if "ashbyhq.com" in host:
         return ashby
+    if "oraclecloud.com" in host:
+        return oracle
+    if "jobs.apple.com" in host:
+        return apple
     return radancy
+
+
+def get_source(typ, url):
+    if typ:
+        if typ not in SOURCES:
+            raise ValueError(f"unknown type '{typ}' (use one of: {', '.join(SOURCES)})")
+        return SOURCES[typ]
+    return pick_source(url)
 
 
 # ------------------------------------------------------------ filtering
@@ -380,13 +563,16 @@ def format_job(j):
 
 
 def load_companies():
+    """Lines:  Name | URL   or   Name | type | URL   ->  (name, type or None, url)"""
     out = []
     for line in open(COMPANIES_FILE, encoding="utf-8"):
         line = line.strip()
         if not line or line.startswith("#") or "|" not in line:
             continue
-        n, u = [x.strip() for x in line.split("|", 1)]
-        out.append((n, u))
+        parts = [x.strip() for x in line.split("|")]
+        name, url = parts[0], parts[-1]
+        typ = parts[1].lower() if len(parts) >= 3 else None
+        out.append((name, typ, url))
     return out
 
 
@@ -397,6 +583,16 @@ def load_seen():
     return set(data) if isinstance(data, list) else set()
 
 
+def load_health():
+    if not os.path.exists(HEALTH_FILE):
+        return {}
+    try:
+        data = json.load(open(HEALTH_FILE, encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except ValueError:
+        return {}
+
+
 def main():
     if "--test" in sys.argv:
         send_mail("Job watch test", "Email works.")
@@ -405,15 +601,23 @@ def main():
 
     dry = "--dry-run" in sys.argv
     seen = load_seen()
+    health = load_health()
     first_run = not seen and not dry  # dry runs show everything
     matches = []
+    newly_failing, recovered = [], []
 
-    for name, url in load_companies():
+    for name, typ, url in load_companies():
         try:
-            jobs = list(pick_source(url)(name, url))
+            jobs = list(get_source(typ, url)(name, url))
         except Exception as e:
-            print(f"[{name}] FAILED to fetch listings: {e}")
+            print(f"[{name}] FAILED to fetch listings: {e} {body_of(e)}")
+            health[name] = health.get(name, 0) + 1
+            if health[name] == FAIL_ALERT_AFTER:
+                newly_failing.append((name, str(e)))
             continue
+        if health.get(name, 0) >= FAIL_ALERT_AFTER:
+            recovered.append(name)
+        health[name] = 0
         print(f"[{name}] {len(jobs)} listings fetched")
         for job in jobs:
             try:
@@ -430,6 +634,9 @@ def main():
     if dry:
         for j in matches:
             print("\n" + format_job(j))
+        failing_now = {n: c for n, c in health.items() if c}
+        if failing_now:
+            print(f"\nConsecutive failures so far: {failing_now}")
         print("\n(dry run: nothing emailed, nothing saved)")
         return
 
@@ -438,6 +645,20 @@ def main():
                   "\n\n".join(format_job(j) for j in matches))
         print("Email sent.")
     json.dump(sorted(seen), open(SEEN_FILE, "w", encoding="utf-8"))
+    json.dump(health, open(HEALTH_FILE, "w", encoding="utf-8"), indent=2)
+
+    # Health emails (never let a mail problem lose the saved state above)
+    try:
+        if newly_failing:
+            send_mail(f"Job watch: {len(newly_failing)} company source(s) failing",
+                      f"These have failed {FAIL_ALERT_AFTER} runs in a row, so you may be missing jobs:\n\n"
+                      + "\n".join(f"- {n}: {err}" for n, err in newly_failing)
+                      + "\n\nCheck the URL in companies.txt or whether the site changed.")
+        if recovered:
+            send_mail("Job watch: source(s) recovered",
+                      "Working again: " + ", ".join(recovered))
+    except Exception as e:
+        print(f"Could not send health email: {e}")
 
 
 if __name__ == "__main__":
