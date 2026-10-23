@@ -8,11 +8,9 @@ Citi         | radancy   | https://jobs.citi.com
 Mastercard   | workday   | https://mastercard.wd1.myworkdayjobs.com/CorporateCareers
 Salesforce   | workday   | https://salesforce.wd12.myworkdayjobs.com/External_Career_Site
 Wells Fargo  | workday   | https://wf.wd1.myworkdayjobs.com/WellsFargoJobs
-Walmart      | workday   | https://walmart.wd5.myworkdayjobs.com/WalmartExternal
 Adobe        | workday   | https://adobe.wd5.myworkdayjobs.com/external_experienced
 Atlassian    | atlassian | https://www.atlassian.com/company/careers/all-jobs
 CRED         | lever     | https://jobs.lever.co/cred
-Barclays     | radancy   | https://search.jobs.barclays
+#Barclays     | radancy   | https://search.jobs.barclays
 Apple        | apple     | https://jobs.apple.com/en-in/search?location=india-INDC
 JPMorgan     | oracle    | https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs
-Akamai       | workday   | https://akamai.wd1.myworkdayjobs.com/akamaicareers
