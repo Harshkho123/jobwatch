@@ -1,17 +1,18 @@
-# One company per line:   Name | career page URL
-# Supported automatically: Workday, Greenhouse, Lever, Ashby, and Radancy-style sites (Citi, Barclays...)
-# For Workday paste the job-board URL, e.g. https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+# Format:   Name | URL                 (platform guessed from the URL)
+#           Name | type | URL          (type forces the platform)
+# Types: workday, greenhouse, lever, ashby, radancy, oracle, apple, atlassian
+# Put # in front of a line to pause a company.
 
-Nvidia         | https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
-Citi           | https://jobs.citi.com
-Mastercard     | https://mastercard.wd1.myworkdayjobs.com/CorporateCareers
-Salesforce     | https://salesforce.wd12.myworkdayjobs.com/External_Career_Site
-Wells Fargo    | https://wf.wd1.myworkdayjobs.com/WellsFargoJobs
-Walmart        | https://walmart.wd5.myworkdayjobs.com/WalmartExternal
-Adobe          | https://adobe.wd5.myworkdayjobs.com/external_experienced
-#Atlassian      | https://jobs.lever.co/atlassian
-CRED           | https://jobs.lever.co/cred
-Barclays       | https://search.jobs.barclays
-#Apple          | https://jobs.apple.com/en-in/search?location=india-INDC
-#JPMorgan       | https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs
-Akamai         | https://akamai.wd1.myworkdayjobs.com/akamaicareers
+Nvidia       | workday   | https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+Citi         | radancy   | https://jobs.citi.com
+Mastercard   | workday   | https://mastercard.wd1.myworkdayjobs.com/CorporateCareers
+Salesforce   | workday   | https://salesforce.wd12.myworkdayjobs.com/External_Career_Site
+Wells Fargo  | workday   | https://wf.wd1.myworkdayjobs.com/WellsFargoJobs
+Walmart      | workday   | https://walmart.wd5.myworkdayjobs.com/WalmartExternal
+Adobe        | workday   | https://adobe.wd5.myworkdayjobs.com/external_experienced
+Atlassian    | atlassian | https://www.atlassian.com/company/careers/all-jobs
+CRED         | lever     | https://jobs.lever.co/cred
+Barclays     | radancy   | https://search.jobs.barclays
+Apple        | apple     | https://jobs.apple.com/en-in/search?location=india-INDC
+JPMorgan     | oracle    | https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs
+Akamai       | workday   | https://akamai.wd1.myworkdayjobs.com/akamaicareers
