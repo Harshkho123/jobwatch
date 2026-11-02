@@ -71,7 +71,7 @@ TITLE_EXCLUDE = re.compile(
 
 # Location must look like India
 INDIA = re.compile(
-    r"\bindia\b|pune|bengaluru|bangalore|hyderabad|mumbai|chennai|gurgaon|gurugram|"
+    r"\bindia\b|pune|bengaluru|bangalore|hyderabad|mumbai|chennai|gurgaon|gurugram|Nagpur"
     r"noida|delhi|kolkata|ahmedabad|kochi|coimbatore|thiruvananthapuram|indore",
     re.I,
 )
