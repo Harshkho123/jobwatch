@@ -16,9 +16,6 @@ Types: workday, greenhouse, lever, ashby, radancy, oracle, apple, atlassian
 Health check: if a company fails FAIL_ALERT_AFTER runs in a row you get one
 email; you get another when it recovers. State lives in health.json (keep it
 persisted the same way as seen.json).
-
-Rate limits: http() retries on 429/503 with backoff (honours Retry-After), and
-main() pauses COMPANY_DELAY seconds between companies.
 """
 import html
 import json
@@ -52,17 +49,11 @@ if os.path.exists(env_path):
 MAX_AGE_DAYS = 4          # only jobs posted within this many days
 MIN_SKILLS = 3            # job description must match at least this many skill groups
 FAIL_ALERT_AFTER = 6      # consecutive failed runs before a "company is failing" email
-REQUEST_DELAY = 1.5       # seconds between every HTTP request (raise to 2.5 if still throttled)
-COMPANY_DELAY = 5         # extra pause between companies (raise to 10 if still throttled)
-MAX_RETRIES = 5           # retries on 429/503 before giving up on a request
 HEADERS = {"User-Agent": "Mozilla/5.0 (personal job-watch script)"}
 
 # Search words sent to each career site
 SEARCH_TERMS = ["site reliability", "sre", "devops", "kubernetes", "platform engineer",
                 "infrastructure", "application support", "technology analyst"]
-
-# Workday sites get fewer terms (TITLE_MATCH filters results anyway) to avoid 429s
-WORKDAY_TERMS = ["site reliability", "sre", "devops", "kubernetes", "platform engineer"]
 
 # Job TITLE must match one of these...
 TITLE_MATCH = re.compile(
@@ -80,7 +71,7 @@ TITLE_EXCLUDE = re.compile(
 
 # Location must look like India
 INDIA = re.compile(
-    r"\bindia\b|pune|bengaluru|bangalore|hyderabad|mumbai|chennai|gurgaon|gurugram|nagpur|"
+    r"\bindia\b|pune|bengaluru|bangalore|hyderabad|mumbai|chennai|gurgaon|gurugram|Nagpur|"
     r"noida|delhi|kolkata|ahmedabad|kochi|coimbatore|thiruvananthapuram|indore",
     re.I,
 )
@@ -105,25 +96,10 @@ SKILLS = {
 
 # ------------------------------------------------------------- helpers
 def http(method, url, **kw):
-    """HTTP call with a polite delay and retry/backoff on 429/503."""
+    time.sleep(0.5)  # be gentle with the sites
     headers = {**HEADERS, **kw.pop("headers", {})}
-    r = None
-    for attempt in range(MAX_RETRIES):
-        time.sleep(REQUEST_DELAY)
-        r = requests.request(method, url, headers=headers, timeout=30, **kw)
-        if r.status_code in (429, 503):
-            try:
-                wait = int(r.headers.get("Retry-After", ""))
-            except ValueError:
-                wait = 10 * (2 ** attempt)  # 10, 20, 40, 80, 160 seconds
-            wait = min(wait, 120)
-            print(f"   (rate limited by {urlparse(url).netloc}, waiting {wait}s, "
-                  f"retry {attempt + 1}/{MAX_RETRIES})")
-            time.sleep(wait)
-            continue
-        r.raise_for_status()
-        return r
-    r.raise_for_status()  # still throttled after all retries -> raise as before
+    r = requests.request(method, url, headers=headers, timeout=30, **kw)
+    r.raise_for_status()
     return r
 
 
@@ -162,7 +138,7 @@ def body_of(e):
 # "fetch" (optional) is a function returning extra details (date/location/description).
 # A source RAISES if it could not get any data at all (that feeds the health check).
 
-# ---- Workday (Nvidia, Walmart, Akamai, CrowdStrike and many large companies) ----
+# ---- Workday (Nvidia, Walmart, Akamai and many large companies) ----
 WORKDAY_HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json",
@@ -202,7 +178,7 @@ def workday(name, url):
     api = f"{base}/wday/cxs/{tenant}/{site}"
     seen_paths = set()
     ok, last_err = 0, None
-    for term in WORKDAY_TERMS:
+    for term in SEARCH_TERMS:
         for offset in (0, 20, 40):
             body = {"appliedFacets": {}, "limit": 20, "offset": offset, "searchText": term}
             try:
@@ -327,6 +303,7 @@ def radancy(name, url):
 
 
 # ---- Oracle HCM "Candidate Experience" sites (JPMorgan and many others) ----
+# Untested against the live site: uses Oracle's public recruiting REST API.
 def oracle_detail(api, site, rid):
     try:
         params = {"onlyData": "true", "expand": "all",
@@ -389,8 +366,7 @@ def oracle(name, url):
         raise last_err
 
 
-# ---- Apple (jobs.apple.com internal search API; BROKEN: csrfToken returns 404) ----
-# Left in place but disabled in companies.txt until the endpoint is re-checked.
+# ---- Apple (jobs.apple.com internal search API; untested, may need tweaks) ----
 def apple(name, url):
     s = requests.Session()
     s.headers.update(HEADERS)
@@ -407,7 +383,7 @@ def apple(name, url):
     seen_ids = set()
     for term in SEARCH_TERMS:
         for page in (1, 2):
-            time.sleep(REQUEST_DELAY)
+            time.sleep(0.5)
             body = {
                 "query": term,
                 "filters": {"locations": ["postLocation-INDC"]},  # India
@@ -438,7 +414,7 @@ def apple(name, url):
                 }
 
 
-# ---- Atlassian (careers site JSON listing; written defensively) ----
+# ---- Atlassian (careers site JSON listing; untested, written defensively) ----
 def atlassian(name, url):
     data = http("GET", "https://www.atlassian.com/endpoint/careers/listings",
                 headers={"Accept": "application/json"}).json()
@@ -630,9 +606,7 @@ def main():
     matches = []
     newly_failing, recovered = [], []
 
-    for i, (name, typ, url) in enumerate(load_companies()):
-        if i:
-            time.sleep(COMPANY_DELAY)  # pause between companies to stay under rate limits
+    for name, typ, url in load_companies():
         try:
             jobs = list(get_source(typ, url)(name, url))
         except Exception as e:
