@@ -10,6 +10,7 @@ Salesforce   | workday   | https://salesforce.wd12.myworkdayjobs.com/External_Ca
 Wells Fargo  | workday   | https://wf.wd1.myworkdayjobs.com/WellsFargoJobs
 Adobe        | workday   | https://adobe.wd5.myworkdayjobs.com/external_experienced
 Atlassian    | atlassian | https://www.atlassian.com/company/careers/all-jobs
+CrowdStrike  | workday   | https://crowdstrike.wd5.myworkdayjobs.com/crowdstrikecareers
 CRED         | lever     | https://jobs.lever.co/cred
 #Barclays     | radancy   | https://search.jobs.barclays
 Apple        | apple     | https://jobs.apple.com/en-in/search?location=india-INDC
