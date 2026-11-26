@@ -9,9 +9,10 @@ Mastercard   | workday   | https://mastercard.wd1.myworkdayjobs.com/CorporateCar
 Salesforce   | workday   | https://salesforce.wd12.myworkdayjobs.com/External_Career_Site
 Wells Fargo  | workday   | https://wf.wd1.myworkdayjobs.com/WellsFargoJobs
 Adobe        | workday   | https://adobe.wd5.myworkdayjobs.com/external_experienced
-Atlassian    | atlassian | https://www.atlassian.com/company/careers/all-jobs
 CrowdStrike  | workday   | https://crowdstrike.wd5.myworkdayjobs.com/crowdstrikecareers
+Atlassian    | atlassian | https://www.atlassian.com/company/careers/all-jobs
 CRED         | lever     | https://jobs.lever.co/cred
 #Barclays     | radancy   | https://search.jobs.barclays
-Apple        | apple     | https://jobs.apple.com/en-in/search?location=india-INDC
+# Apple paused: csrfToken endpoint returns 404, needs a fix before re-enabling
+#Apple        | apple     | https://jobs.apple.com/en-in/search?location=india-INDC
 JPMorgan     | oracle    | https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs
